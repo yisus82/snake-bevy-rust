@@ -3,8 +3,10 @@ use rand::prelude::random;
 
 const SNAKE_HEAD_COLOR: Color = Color::rgb(0.7, 0.7, 0.7);
 const FOOD_COLOR: Color = Color::rgb(1.0, 0.0, 1.0);
-const ARENA_WIDTH: u32 = 10;
-const ARENA_HEIGHT: u32 = 10;
+const ARENA_WIDTH: u32 = 50;
+const ARENA_HEIGHT: u32 = 50;
+const WINDOW_WIDTH: f32 = 500.;
+const WINDOW_HEIGHT: f32 = 500.;
 
 #[derive(Component, Clone, Copy, PartialEq, Eq)]
 struct Position {
@@ -26,8 +28,29 @@ impl Size {
     }
 }
 
+#[derive(PartialEq, Copy, Clone)]
+enum Direction {
+    Left,
+    Up,
+    Right,
+    Down,
+}
+
+impl Direction {
+    fn opposite(self) -> Self {
+        match self {
+            Self::Left => Self::Right,
+            Self::Right => Self::Left,
+            Self::Up => Self::Down,
+            Self::Down => Self::Up,
+        }
+    }
+}
+
 #[derive(Component)]
-struct SnakeHead;
+struct SnakeHead {
+    direction: Direction,
+}
 
 #[derive(Component)]
 struct Food;
@@ -45,28 +68,51 @@ fn spawn_snake(mut commands: Commands) {
             },
             ..default()
         })
-        .insert(SnakeHead)
-        .insert(Position { x: 3, y: 3 }) // <--
+        .insert(SnakeHead {
+            direction: Direction::Up,
+        })
+        .insert(Position {
+            x: ARENA_WIDTH as i32 / 2,
+            y: ARENA_HEIGHT as i32 / 2,
+        }) // <--
         .insert(Size::square(0.8));
 }
 
-fn snake_movement(
-    keyboard_input: Res<Input<KeyCode>>,
-    mut head_positions: Query<&mut Position, With<SnakeHead>>,
-) {
-    for mut pos in head_positions.iter_mut() {
-        if keyboard_input.pressed(KeyCode::Left) {
-            pos.x -= 1;
+fn snake_movement_input(keyboard_input: Res<Input<KeyCode>>, mut heads: Query<&mut SnakeHead>) {
+    if let Some(mut head) = heads.iter_mut().next() {
+        let dir: Direction = if keyboard_input.pressed(KeyCode::Left) {
+            Direction::Left
+        } else if keyboard_input.pressed(KeyCode::Down) {
+            Direction::Down
+        } else if keyboard_input.pressed(KeyCode::Up) {
+            Direction::Up
+        } else if keyboard_input.pressed(KeyCode::Right) {
+            Direction::Right
+        } else {
+            head.direction
+        };
+        if dir != head.direction.opposite() {
+            head.direction = dir;
         }
-        if keyboard_input.pressed(KeyCode::Right) {
-            pos.x += 1;
-        }
-        if keyboard_input.pressed(KeyCode::Down) {
-            pos.y -= 1;
-        }
-        if keyboard_input.pressed(KeyCode::Up) {
-            pos.y += 1;
-        }
+    }
+}
+
+fn snake_movement(mut heads: Query<(&mut Position, &SnakeHead)>) {
+    if let Some((mut head_pos, head)) = heads.iter_mut().next() {
+        match &head.direction {
+            Direction::Left => {
+                head_pos.x -= 1;
+            }
+            Direction::Right => {
+                head_pos.x += 1;
+            }
+            Direction::Up => {
+                head_pos.y += 1;
+            }
+            Direction::Down => {
+                head_pos.y -= 1;
+            }
+        };
     }
 }
 
@@ -121,16 +167,21 @@ fn main() {
     App::new()
         .insert_resource(WindowDescriptor {
             title: "Snake".to_string(),
-            width: 500.,
-            height: 500.,
+            width: WINDOW_WIDTH,
+            height: WINDOW_HEIGHT,
             ..default()
         })
         .insert_resource(ClearColor(Color::rgb(0.04, 0.04, 0.04)))
         .add_startup_system(setup_camera)
         .add_startup_system(spawn_snake)
         .add_plugins(DefaultPlugins)
-        .add_system(snake_movement)
+        .add_system(snake_movement_input.before(snake_movement))
         .add_system(bevy::window::close_on_esc)
+        .add_system_set(
+            SystemSet::new()
+                .with_run_criteria(FixedTimestep::step(0.150))
+                .with_system(snake_movement),
+        )
         .add_system_set(
             SystemSet::new()
                 .with_run_criteria(FixedTimestep::step(1.0))
